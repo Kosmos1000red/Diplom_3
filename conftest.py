@@ -1,11 +1,10 @@
 import os
+from uuid import uuid4
 
 import allure
 import pytest
-from selenium import webdriver
-from uuid import uuid4
-
 import requests
+from selenium import webdriver
 
 from config import BASE_URL, REQUEST_TIMEOUT
 from pages.login_page import LoginPage
@@ -20,13 +19,13 @@ def driver(request):
     else:
         browser = webdriver.Firefox()
 
-    browser.set_window_size(1920, 1080)
-    allure.dynamic.parameter("browser", request.param)
-
     try:
+        browser.set_window_size(1920, 1080)
+        allure.dynamic.parameter("browser", request.param)
         yield browser
     finally:
         browser.quit()
+
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
@@ -42,6 +41,7 @@ def pytest_runtest_makereport(item, call):
                 attachment_type=allure.attachment_type.PNG,
             )
 
+
 @pytest.fixture
 def registered_user():
     unique_id = uuid4().hex
@@ -56,10 +56,15 @@ def registered_user():
         json=data,
         timeout=REQUEST_TIMEOUT,
     )
-    assert response.status_code == 200, response.text
+    response.raise_for_status()
 
     body = response.json()
-    token = body["accessToken"]
+    token = body.get("accessToken")
+
+    if not token:
+        raise RuntimeError(
+            f"Не получен токен тестового пользователя: {response.text}"
+        )
 
     try:
         yield data
@@ -69,11 +74,8 @@ def registered_user():
             headers={"Authorization": token},
             timeout=REQUEST_TIMEOUT,
         )
-        assert delete_response.status_code == 202, (
-            "Не удалось удалить пользователя: "
-            f"{delete_response.status_code}, "
-            f"{delete_response.text}"
-        )
+        delete_response.raise_for_status()
+
 
 @pytest.fixture
 def authenticated_driver(driver, registered_user):
